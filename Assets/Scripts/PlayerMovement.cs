@@ -22,9 +22,11 @@ public class PlayerMovement : MonoBehaviour
     public float crouchSpeed;
     public float crouchYScale;
     private float startYScale;
+    public float crouchTransitionDuration = 0.2f;
 
     [Header("Dashing")]
     public float dashForce;
+    public float dashDuration = 0.2f;
     public float dashCooldown;
     bool readyToDash = true; 
 
@@ -53,6 +55,11 @@ public class PlayerMovement : MonoBehaviour
         crouching,
         air
     }
+
+    private TrailRenderer trailRenderer;
+
+    private Coroutine crouchCoroutine;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -61,6 +68,16 @@ public class PlayerMovement : MonoBehaviour
 
         startYScale = transform.localScale.y;
         playerHeight = transform.localScale.y;
+
+        trailRenderer = GetComponent<TrailRenderer>();
+        if (trailRenderer != null)
+        {
+            trailRenderer.emitting = false; // Disable trail emission at the start
+        }
+        else
+        {
+            Debug.LogError("TrailRenderer component not found on the GameObject.");
+        }
     }
 
     // Update is called once per frame
@@ -102,16 +119,21 @@ public class PlayerMovement : MonoBehaviour
         }
 
         if (Input.GetKeyDown(crouchKey)) {
-            transform.localScale = new Vector3(transform.localScale.x, crouchYScale, transform.localScale.z);
-            rigidBody.AddForce(Vector3.down * 5f, ForceMode.Impulse);
+            if (crouchCoroutine != null) {
+                StopCoroutine(crouchCoroutine);
+            }
+            crouchCoroutine = StartCoroutine(Crouch());
         }
 
         if (Input.GetKeyUp(crouchKey)) {
-            transform.localScale = new Vector3(transform.localScale.x, startYScale, transform.localScale.z);
+            if (crouchCoroutine != null) {
+                StopCoroutine(crouchCoroutine);
+            }
+            crouchCoroutine = StartCoroutine(Uncrouch());
         }
 
         if (Input.GetKey(dashKey) && readyToDash) {
-            Dash();
+            StartCoroutine(Dash());
             readyToDash = false;
             Invoke(nameof(ResetDash), dashCooldown);
         }
@@ -163,16 +185,49 @@ public class PlayerMovement : MonoBehaviour
         readyToJump = true;
     }
 
-    private void Dash() {
+    private IEnumerator Dash() {
         // Vector3 dashDirection = orientation.forward; dashes forward only
         Vector3 dashDirection = moveDirection.normalized;
         if (dashDirection == Vector3.zero) {
             dashDirection = orientation.forward;
         }
-        rigidBody.AddForce(dashDirection * dashForce, ForceMode.Impulse);
+        trailRenderer.emitting = true;
+
+        float startTime = Time.time;
+        while (Time.time < startTime + dashDuration) {
+            rigidBody.AddForce(dashDirection * (dashForce * Time.deltaTime / dashDuration), ForceMode.Impulse);
+            yield return null;
+        }
+        trailRenderer.emitting = false;
     }
 
     private void ResetDash() {
         readyToDash = true;
+    }
+
+    private IEnumerator Crouch() {
+        float elapsedTime = 0f;
+        Vector3 originalScale = transform.localScale;
+        Vector3 targetScale = new Vector3(originalScale.x, startYScale * crouchYScale, originalScale.z);
+
+        while (elapsedTime < crouchTransitionDuration) {
+            transform.localScale = Vector3.Lerp(originalScale, targetScale, elapsedTime / crouchTransitionDuration);
+            elapsedTime += Time.deltaTime;
+            yield return null;
+        }
+        transform.localScale = targetScale;
+    }
+    private IEnumerator Uncrouch() {
+        float elapsedTime = 0f;
+        Vector3 originalScale = transform.localScale;
+        Vector3 targetScale = new Vector3(originalScale.x, startYScale, originalScale.z);
+
+        while (elapsedTime < crouchTransitionDuration)
+        {
+            transform.localScale = Vector3.Lerp(originalScale, targetScale, elapsedTime / crouchTransitionDuration);
+            elapsedTime += Time.deltaTime;
+            yield return null;
+        }
+        transform.localScale = targetScale;
     }
 }
